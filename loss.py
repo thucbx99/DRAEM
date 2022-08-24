@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from math import exp
 
+
 class FocalLoss(nn.Module):
     """
     copy from: https://github.com/Hsuxu/Loss_ToolBox-PyTorch/blob/master/FocalLoss/FocalLoss.py
@@ -85,15 +86,18 @@ class FocalLoss(nn.Module):
             loss = loss.mean()
         return loss
 
+
 def gaussian(window_size, sigma):
-    gauss = torch.Tensor([exp(-(x - window_size//2)**2/float(2*sigma**2)) for x in range(window_size)])
-    return gauss/gauss.sum()
+    gauss = torch.Tensor([exp(-(x - window_size // 2) ** 2 / float(2 * sigma ** 2)) for x in range(window_size)])
+    return gauss / gauss.sum()
+
 
 def create_window(window_size, channel=1):
     _1D_window = gaussian(window_size, 1.5).unsqueeze(1)
     _2D_window = _1D_window.mm(_1D_window.t()).float().unsqueeze(0).unsqueeze(0)
     window = _2D_window.expand(channel, 1, window_size, window_size).contiguous()
     return window
+
 
 def ssim(img1, img2, window_size=11, window=None, size_average=True, full=False, val_range=None):
     if val_range is None:
@@ -110,7 +114,7 @@ def ssim(img1, img2, window_size=11, window=None, size_average=True, full=False,
     else:
         l = val_range
 
-    padd = window_size//2
+    padd = window_size // 2
     (_, channel, height, width) = img1.size()
     if window is None:
         real_size = min(window_size, height, width)
@@ -167,5 +171,6 @@ class SSIM(torch.nn.Module):
             self.window = window
             self.channel = channel
 
-        s_score, ssim_map = ssim(img1, img2, window=window, window_size=self.window_size, size_average=self.size_average)
+        s_score, ssim_map = ssim(img1, img2, window=window, window_size=self.window_size,
+                                 size_average=self.size_average)
         return 1.0 - s_score

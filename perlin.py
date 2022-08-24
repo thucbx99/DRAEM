@@ -2,16 +2,18 @@ import torch
 import math
 import numpy as np
 
-def lerp_np(x,y,w):
-    fin_out = (y-x)*w + x
+
+def lerp_np(x, y, w):
+    fin_out = (y - x) * w + x
     return fin_out
+
 
 def generate_fractal_noise_2d(shape, res, octaves=1, persistence=0.5):
     noise = np.zeros(shape)
     frequency = 1
     amplitude = 1
     for _ in range(octaves):
-        noise += amplitude * generate_perlin_noise_2d(shape, (frequency*res[0], frequency*res[1]))
+        noise += amplitude * generate_perlin_noise_2d(shape, (frequency * res[0], frequency * res[1]))
         frequency *= 2
         amplitude *= persistence
     return noise
@@ -50,12 +52,13 @@ def rand_perlin_2d_np(shape, res, fade=lambda t: 6 * t ** 5 - 15 * t ** 4 + 10 *
 
     angles = 2 * math.pi * np.random.rand(res[0] + 1, res[1] + 1)
     gradients = np.stack((np.cos(angles), np.sin(angles)), axis=-1)
-    tt = np.repeat(np.repeat(gradients,d[0],axis=0),d[1],axis=1)
+    tt = np.repeat(np.repeat(gradients, d[0], axis=0), d[1], axis=1)
 
-    tile_grads = lambda slice1, slice2: np.repeat(np.repeat(gradients[slice1[0]:slice1[1], slice2[0]:slice2[1]],d[0],axis=0),d[1],axis=1)
+    tile_grads = lambda slice1, slice2: np.repeat(
+        np.repeat(gradients[slice1[0]:slice1[1], slice2[0]:slice2[1]], d[0], axis=0), d[1], axis=1)
     dot = lambda grad, shift: (
-                np.stack((grid[:shape[0], :shape[1], 0] + shift[0], grid[:shape[0], :shape[1], 1] + shift[1]),
-                            axis=-1) * grad[:shape[0], :shape[1]]).sum(axis=-1)
+            np.stack((grid[:shape[0], :shape[1], 0] + shift[0], grid[:shape[0], :shape[1], 1] + shift[1]),
+                     axis=-1) * grad[:shape[0], :shape[1]]).sum(axis=-1)
 
     n00 = dot(tile_grads([0, -1], [0, -1]), [0, 0])
     n10 = dot(tile_grads([1, None], [0, -1]), [-1, 0])
@@ -77,8 +80,8 @@ def rand_perlin_2d(shape, res, fade=lambda t: 6 * t ** 5 - 15 * t ** 4 + 10 * t 
                                                                                                               0).repeat_interleave(
         d[1], 1)
     dot = lambda grad, shift: (
-                torch.stack((grid[:shape[0], :shape[1], 0] + shift[0], grid[:shape[0], :shape[1], 1] + shift[1]),
-                            dim=-1) * grad[:shape[0], :shape[1]]).sum(dim=-1)
+            torch.stack((grid[:shape[0], :shape[1], 0] + shift[0], grid[:shape[0], :shape[1], 1] + shift[1]),
+                        dim=-1) * grad[:shape[0], :shape[1]]).sum(dim=-1)
 
     n00 = dot(tile_grads([0, -1], [0, -1]), [0, 0])
 
