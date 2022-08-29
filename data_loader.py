@@ -155,7 +155,6 @@ class MVTecDRAEMTrainDataset(Dataset):
         return image, augmented_image, anomaly_mask, has_anomaly
 
     def __getitem__(self, idx):
-        idx = torch.randint(0, len(self.image_paths), (1,)).item()
         anomaly_source_idx = torch.randint(0, len(self.anomaly_source_paths), (1,)).item()
         image, augmented_image, anomaly_mask, has_anomaly = self.transform_image(self.image_paths[idx],
                                                                                  self.anomaly_source_paths[

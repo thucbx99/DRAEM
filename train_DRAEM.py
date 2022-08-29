@@ -1,11 +1,17 @@
+import os
+
+from sklearn.metrics import roc_auc_score, average_precision_score
+import numpy as np
 import torch
-from data_loader import MVTecDRAEMTrainDataset
-from torch.utils.data import DataLoader
 from torch import optim
-from tensorboard_visualizer import TensorboardVisualizer
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, Subset
+
+from data_loader import MVTecDRAEMTrainDataset, MVTecDRAEMTestDataset
 from model_unet import ReconstructiveSubNetwork, DiscriminativeSubNetwork
 from loss import FocalLoss, SSIM
-import os
+from logger import CompleteLogger
+from meter import AverageMeter, ProgressMeter
 
 
 def get_lr(optimizer):
@@ -22,6 +28,66 @@ def weights_init(m):
         m.bias.data.fill_(0)
 
 
+def test(obj_name, model, model_seg, args):
+    # switch to eval mode
+    model.eval()
+    model_seg.eval()
+
+    dataset = MVTecDRAEMTestDataset(os.path.join(args.data_path, obj_name, 'test'), resize_shape=[256, 256])
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
+
+    total_pixel_scores = np.zeros((256 * 256 * len(dataset)))
+    total_gt_pixel_scores = np.zeros((256 * 256 * len(dataset)))
+    mask_cnt = 0
+    anomaly_score_gt = []
+    anomaly_score_prediction = []
+
+    for i_batch, sample_batched in enumerate(dataloader):
+        gray_batch = sample_batched["image"].cuda()
+
+        is_normal = sample_batched["has_anomaly"].detach().numpy()[0, 0]
+        anomaly_score_gt.append(is_normal)
+        true_mask = sample_batched["mask"]
+        true_mask_cv = true_mask.detach().numpy()[0, :, :, :].transpose((1, 2, 0))
+
+        gray_rec = model(gray_batch)
+        joined_in = torch.cat((gray_rec.detach(), gray_batch), dim=1)
+
+        out_mask = model_seg(joined_in)
+        out_mask_sm = torch.softmax(out_mask, dim=1)
+
+        out_mask_cv = out_mask_sm[0, 1, :, :].detach().cpu().numpy()
+        out_mask_averaged = F.avg_pool2d(out_mask_sm[:, 1:, :, :], 21, stride=1,
+                                         padding=21 // 2).cpu().detach().numpy()
+        image_score = np.max(out_mask_averaged)
+
+        anomaly_score_prediction.append(image_score)
+
+        flat_true_mask = true_mask_cv.flatten()
+        flat_out_mask = out_mask_cv.flatten()
+        total_pixel_scores[mask_cnt * 256 * 256:(mask_cnt + 1) * 256 * 256] = flat_out_mask
+        total_gt_pixel_scores[mask_cnt * 256 * 256:(mask_cnt + 1) * 256 * 256] = flat_true_mask
+        mask_cnt += 1
+
+    anomaly_score_prediction = np.array(anomaly_score_prediction)
+    anomaly_score_gt = np.array(anomaly_score_gt)
+    auroc = roc_auc_score(anomaly_score_gt, anomaly_score_prediction)
+    ap = average_precision_score(anomaly_score_gt, anomaly_score_prediction)
+
+    total_gt_pixel_scores = total_gt_pixel_scores.astype(np.uint8)
+    total_gt_pixel_scores = total_gt_pixel_scores[:256 * 256 * mask_cnt]
+    total_pixel_scores = total_pixel_scores[:256 * 256 * mask_cnt]
+    auroc_pixel = roc_auc_score(total_gt_pixel_scores, total_pixel_scores)
+    ap_pixel = average_precision_score(total_gt_pixel_scores, total_pixel_scores)
+
+    print("=" * 50)
+    print("AUC Image:  " + str(auroc))
+    print("AP Image:  " + str(ap))
+    print("AUC Pixel:  " + str(auroc_pixel))
+    print("AP Pixel:  " + str(ap_pixel))
+    print("=" * 50)
+
+
 def train_on_device(obj_names, args):
     if not os.path.exists(args.checkpoint_path):
         os.makedirs(args.checkpoint_path)
@@ -29,10 +95,12 @@ def train_on_device(obj_names, args):
     if not os.path.exists(args.log_path):
         os.makedirs(args.log_path)
 
-    for obj_name in obj_names:
-        run_name = 'DRAEM_test_' + str(args.lr) + '_' + str(args.epochs) + '_bs' + str(args.bs) + "_" + obj_name + '_'
+    logger = CompleteLogger(args.log_path)
 
-        visualizer = TensorboardVisualizer(log_dir=os.path.join(args.log_path, run_name + "/"))
+    print(obj_names)
+    for obj_name in obj_names:
+        print('anomaly detection object {}'.format(obj_name))
+        run_name = 'DRAEM_test_' + str(args.lr) + '_' + str(args.epochs) + '_bs' + str(args.bs) + "_" + obj_name + '_'
 
         model = ReconstructiveSubNetwork(in_channels=3, out_channels=3)
         model.cuda()
@@ -53,14 +121,30 @@ def train_on_device(obj_names, args):
         loss_ssim = SSIM()
         loss_focal = FocalLoss()
 
-        dataset = MVTecDRAEMTrainDataset(args.data_path + obj_name + "/train/good/", args.anomaly_source_path,
-                                         resize_shape=[256, 256])
+        dataset = MVTecDRAEMTrainDataset(os.path.join(args.data_path, obj_name, 'train', 'good'),
+                                         args.anomaly_source_path, resize_shape=[256, 256])
+        subset_size = int(len(dataset) * args.sample_rate)
+        subset_idxes = np.random.choice(np.arange(len(dataset)), subset_size, replace=False)
+        dataset = Subset(dataset, subset_idxes)
+        print('dataset_size: {}'.format(len(dataset)))
 
-        dataloader = DataLoader(dataset, batch_size=args.bs,
-                                shuffle=True, num_workers=16)
+        dataloader = DataLoader(dataset, batch_size=args.bs, shuffle=True, num_workers=16)
 
-        n_iter = 0
         for epoch in range(args.epochs):
+            model.train()
+            model_seg.train()
+
+            l2_losses = AverageMeter('L2 Loss', ':3.2f')
+            ssim_losses = AverageMeter('SSIM Loss', ':3.2f')
+            segment_losses = AverageMeter('Segment Loss', ':3.2f')
+            losses = AverageMeter('Loss', ':3.2f')
+
+            progress = ProgressMeter(
+                len(dataloader),
+                [l2_losses, ssim_losses, segment_losses, losses],
+                prefix="Epoch: [{}]".format(epoch))
+
+            # train for one epoch
             print("Epoch: " + str(epoch))
             for i_batch, sample_batched in enumerate(dataloader):
                 gray_batch = sample_batched["image"].cuda()
@@ -75,33 +159,31 @@ def train_on_device(obj_names, args):
 
                 l2_loss = loss_l2(gray_rec, gray_batch)
                 ssim_loss = loss_ssim(gray_rec, gray_batch)
-
                 segment_loss = loss_focal(out_mask_sm, anomaly_mask)
                 loss = l2_loss + ssim_loss + segment_loss
 
                 optimizer.zero_grad()
-
                 loss.backward()
                 optimizer.step()
 
-                if args.visualize and n_iter % 200 == 0:
-                    visualizer.plot_loss(l2_loss, n_iter, loss_name='l2_loss')
-                    visualizer.plot_loss(ssim_loss, n_iter, loss_name='ssim_loss')
-                    visualizer.plot_loss(segment_loss, n_iter, loss_name='segment_loss')
-                if args.visualize and n_iter % 400 == 0:
-                    t_mask = out_mask_sm[:, 1:, :, :]
-                    visualizer.visualize_image_batch(aug_gray_batch, n_iter, image_name='batch_augmented')
-                    visualizer.visualize_image_batch(gray_batch, n_iter, image_name='batch_recon_target')
-                    visualizer.visualize_image_batch(gray_rec, n_iter, image_name='batch_recon_out')
-                    visualizer.visualize_image_batch(anomaly_mask, n_iter, image_name='mask_target')
-                    visualizer.visualize_image_batch(t_mask, n_iter, image_name='mask_out')
+                l2_losses.update(l2_loss.item(), args.bs)
+                ssim_losses.update(ssim_loss.item(), args.bs)
+                segment_losses.update(segment_loss.item(), args.bs)
+                losses.update(loss.item(), args.bs)
 
-                n_iter += 1
+                if i_batch % args.print_freq == 0:
+                    progress.display(i_batch)
 
             scheduler.step()
 
+            # evaluate
+            test(obj_name, model, model_seg, args)
+
+            # save checkpoints
             torch.save(model.state_dict(), os.path.join(args.checkpoint_path, run_name + ".pckl"))
             torch.save(model_seg.state_dict(), os.path.join(args.checkpoint_path, run_name + "_seg.pckl"))
+
+    logger.close()
 
 
 if __name__ == "__main__":
@@ -118,6 +200,10 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint_path', action='store', type=str, required=True)
     parser.add_argument('--log_path', action='store', type=str, required=True)
     parser.add_argument('--visualize', action='store_true')
+
+    parser.add_argument('--sample_rate', default=0.5, type=float,
+                        help='sampling rate for transfer learning')
+    parser.add_argument('--print_freq', default=5, type=int)
 
     args = parser.parse_args()
 
