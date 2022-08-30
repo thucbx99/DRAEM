@@ -1,5 +1,6 @@
 import os
 
+from PIL import Image
 from sklearn.metrics import roc_auc_score, average_precision_score
 import numpy as np
 import torch
@@ -89,18 +90,26 @@ def test(obj_name, model, model_seg, args):
 
 
 def train_on_device(obj_names, args):
-    if not os.path.exists(args.checkpoint_path):
-        os.makedirs(args.checkpoint_path)
-
     if not os.path.exists(args.log_path):
         os.makedirs(args.log_path)
 
     logger = CompleteLogger(args.log_path)
 
+    def visualize(batch_image, name):
+        """
+        Args:
+            batch_image (tensor): N x 3 x H x W
+            name: filename of the saving image
+        """
+        batch_image = batch_image.detach().cpu().numpy()
+        for idx, image in enumerate(batch_image):
+            image = image.transpose((1, 2, 0)) * 255
+            image = Image.fromarray(np.uint8(image))
+            image.save(logger.get_image_path("{}_{}.png".format(name, idx)))
+
     print(obj_names)
     for obj_name in obj_names:
         print('anomaly detection object {}'.format(obj_name))
-        run_name = 'DRAEM_test_' + str(args.lr) + '_' + str(args.epochs) + '_bs' + str(args.bs) + "_" + obj_name + '_'
 
         model = ReconstructiveSubNetwork(in_channels=3, out_channels=3)
         model.cuda()
@@ -131,6 +140,7 @@ def train_on_device(obj_names, args):
         dataloader = DataLoader(dataset, batch_size=args.bs, shuffle=True, num_workers=16)
 
         for epoch in range(args.epochs):
+            logger.set_epoch(epoch)
             model.train()
             model_seg.train()
 
@@ -173,6 +183,9 @@ def train_on_device(obj_names, args):
 
                 if i_batch % args.print_freq == 0:
                     progress.display(i_batch)
+                    visualize(gray_rec, 'rec')
+                    visualize(gray_batch, 'origin')
+                    visualize(aug_gray_batch, 'augmented')
 
             scheduler.step()
 
@@ -180,8 +193,9 @@ def train_on_device(obj_names, args):
             test(obj_name, model, model_seg, args)
 
             # save checkpoints
-            torch.save(model.state_dict(), os.path.join(args.checkpoint_path, run_name + ".pckl"))
-            torch.save(model_seg.state_dict(), os.path.join(args.checkpoint_path, run_name + "_seg.pckl"))
+
+            torch.save(model.state_dict(), logger.get_checkpoint_path('latest_generative'))
+            torch.save(model_seg.state_dict(), logger.get_checkpoint_path('latest_discriminative'))
 
     logger.close()
 
@@ -197,7 +211,6 @@ if __name__ == "__main__":
     parser.add_argument('--gpu_id', action='store', type=int, default=0, required=False)
     parser.add_argument('--data_path', action='store', type=str, required=True)
     parser.add_argument('--anomaly_source_path', action='store', type=str, required=True)
-    parser.add_argument('--checkpoint_path', action='store', type=str, required=True)
     parser.add_argument('--log_path', action='store', type=str, required=True)
     parser.add_argument('--visualize', action='store_true')
 
