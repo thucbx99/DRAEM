@@ -88,6 +88,8 @@ def test(obj_name, model, model_seg, args):
     print("AP Pixel:  " + str(ap_pixel))
     print("=" * 50)
 
+    return ap_pixel
+
 
 def train_on_device(obj_names, args):
     if not os.path.exists(args.log_path):
@@ -115,9 +117,15 @@ def train_on_device(obj_names, args):
         model.cuda()
         model.apply(weights_init)
 
+        if args.pretrained_generative:
+            model.load_state_dict(torch.load(args.pretrained_generative, map_location='cpu'))
+
         model_seg = DiscriminativeSubNetwork(in_channels=6, out_channels=2)
         model_seg.cuda()
         model_seg.apply(weights_init)
+
+        if args.pretrained_discriminative:
+            model_seg.load_state_dict(torch.load(args.pretrained_discriminative, map_location='cpu'))
 
         optimizer = torch.optim.Adam([
             {"params": model.parameters(), "lr": args.lr},
@@ -139,6 +147,7 @@ def train_on_device(obj_names, args):
 
         dataloader = DataLoader(dataset, batch_size=args.bs, shuffle=True, num_workers=16)
 
+        best_ap = 0
         for epoch in range(args.epochs):
             logger.set_epoch(epoch)
             model.train()
@@ -190,13 +199,15 @@ def train_on_device(obj_names, args):
             scheduler.step()
 
             # evaluate
-            test(obj_name, model, model_seg, args)
+            ap = test(obj_name, model, model_seg, args)
+            best_ap = max(ap, best_ap)
 
             # save checkpoints
 
             torch.save(model.state_dict(), logger.get_checkpoint_path('latest_generative'))
             torch.save(model_seg.state_dict(), logger.get_checkpoint_path('latest_discriminative'))
 
+    print('best AP {}'.format(best_ap))
     logger.close()
 
 
@@ -217,6 +228,8 @@ if __name__ == "__main__":
     parser.add_argument('--sample_rate', default=0.5, type=float,
                         help='sampling rate for transfer learning')
     parser.add_argument('--print_freq', default=5, type=int)
+    parser.add_argument('--pretrained-generative', default=None, type=str)
+    parser.add_argument('--pretrained-discriminative', default=None, type=str)
 
     args = parser.parse_args()
 
