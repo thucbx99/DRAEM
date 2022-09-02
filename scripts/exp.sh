@@ -46,20 +46,21 @@ python train_DRAEM.py --data_path datasets/mvtec --obj_id 13 --sample_rate 0.1 -
   --gpu_id 1 --lr 0.00003 --bs 6 --epochs 1000 --log_path logs/grid_sp_10_finetune_0_3_lr
 
 # baseline
+# 65.6
 python train_DRAEM.py --data_path datasets/mvtec --obj_id 13 --sample_rate 0.1 --anomaly_source_path datasets/dtd/images \
   --gpu_id 0 --lr 0.0001 --bs 6 --epochs 1000 --log_path logs/grid_sp_10
 
 # joint training
 
-# carpet only
-python train_DRAEM.py --data_path datasets/mvtec --obj_id 2 --anomaly_source_path datasets/dtd/images \
+# carpet only 66.7
+python train_DRAEM.py --data_path datasets/mvtec --obj_id 2 --sample_rate 1 --anomaly_source_path datasets/dtd/images \
   --gpu_id 0 --lr 0.0001 --bs 6 --epochs 100 --log_path joint_train/carpet_only
 
-# grid only
-python train_DRAEM.py --data_path datasets/mvtec --obj_id 13 --anomaly_source_path datasets/dtd/images \
+# grid only 72.2
+python train_DRAEM.py --data_path datasets/mvtec --obj_id 13 --sample_rate 1 --anomaly_source_path datasets/dtd/images \
   --gpu_id 1 --lr 0.0001 --bs 6 --epochs 100 --log_path joint_train/grid_only
 
-# carpet + grid
+# carpet + grid 57.3 71.8
 python joint_train.py --data_path datasets/mvtec --anomaly_source_path datasets/dtd/images \
   --gpu_id 2 --lr 0.0001 --bs 6 --epochs 100 --log_path joint_train/carpet_grid
 
