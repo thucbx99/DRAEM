@@ -1,5 +1,6 @@
 import os
 
+import cv2
 from PIL import Image
 from sklearn.metrics import roc_auc_score, average_precision_score
 import numpy as np
@@ -109,6 +110,12 @@ def train_on_device(obj_names, args):
             image = Image.fromarray(np.uint8(image))
             image.save(logger.get_image_path("{}_{}.png".format(name, idx)))
 
+    def visualize_mask(batch_mask, name):
+        batch_mask = batch_mask.detach().cpu().numpy()
+        for idx, mask in enumerate(batch_mask):
+            mask = mask * 255
+            cv2.imwrite(logger.get_image_path("{}_{}.png".format(name, idx)), mask)
+
     print(obj_names)
     for obj_name in obj_names:
         print('anomaly detection object {}'.format(obj_name))
@@ -195,6 +202,9 @@ def train_on_device(obj_names, args):
                     visualize(gray_rec, 'rec')
                     visualize(gray_batch, 'origin')
                     visualize(aug_gray_batch, 'augmented')
+
+                    visualize_mask(out_mask_sm[:, 1, :, :], 'output_mask')
+                    visualize_mask(anomaly_mask.squeeze(1), 'gt_mask')
 
             scheduler.step()
 
