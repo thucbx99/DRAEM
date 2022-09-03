@@ -125,6 +125,7 @@ def train_on_device(obj_names, args):
         model.apply(weights_init)
 
         if args.pretrained_generative:
+            print('loading gene')
             model.load_state_dict(torch.load(args.pretrained_generative, map_location='cpu'))
 
         model_seg = DiscriminativeSubNetwork(in_channels=6, out_channels=2)
@@ -132,6 +133,7 @@ def train_on_device(obj_names, args):
         model_seg.apply(weights_init)
 
         if args.pretrained_discriminative:
+            print('loading disc')
             model_seg.load_state_dict(torch.load(args.pretrained_discriminative, map_location='cpu'))
 
         optimizer = torch.optim.Adam([
