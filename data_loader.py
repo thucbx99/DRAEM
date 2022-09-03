@@ -90,6 +90,7 @@ class MVTecDRAEMTrainDataset(Dataset):
                            ]
 
         self.rot = iaa.Sequential([iaa.Affine(rotate=(-90, 90))])
+        self.cnt = 0
 
     def __len__(self):
         return len(self.image_paths)
@@ -110,12 +111,16 @@ class MVTecDRAEMTrainDataset(Dataset):
         anomaly_source_img = cv2.resize(anomaly_source_img, dsize=(self.resize_shape[1], self.resize_shape[0]))
 
         anomaly_img_augmented = aug(image=anomaly_source_img)
-        perlin_scalex = 2 ** (torch.randint(min_perlin_scale, perlin_scale, (1,)).numpy()[0])
-        perlin_scaley = 2 ** (torch.randint(min_perlin_scale, perlin_scale, (1,)).numpy()[0])
+        perlin_scale_x = 4
+        perlin_scale_y = 4
+        # perlin_scale_x = 2 ** (torch.randint(min_perlin_scale, perlin_scale, (1,)).numpy()[0])
+        # perlin_scale_y = 2 ** (torch.randint(min_perlin_scale, perlin_scale, (1,)).numpy()[0])
 
-        perlin_noise = rand_perlin_2d_np((self.resize_shape[0], self.resize_shape[1]), (perlin_scalex, perlin_scaley))
+        perlin_noise = rand_perlin_2d_np((self.resize_shape[0], self.resize_shape[1]), (perlin_scale_x, perlin_scale_y))
         perlin_noise = self.rot(image=perlin_noise)
-        threshold = 0.5
+
+        threshold = 0.3
+        # threshold = 0.5
         perlin_thr = np.where(perlin_noise > threshold, np.ones_like(perlin_noise), np.zeros_like(perlin_noise))
         perlin_thr = np.expand_dims(perlin_thr, axis=2)
 
@@ -125,6 +130,20 @@ class MVTecDRAEMTrainDataset(Dataset):
 
         augmented_image = image * (1 - perlin_thr) + (1 - beta) * img_thr + beta * image * (
             perlin_thr)
+
+        # anomaly part (1 - beta) * aug + beta * image
+        if self.cnt <= 9:
+            self.cnt += 1
+            root = 'effect_of_augmentation'
+            os.makedirs(root, exist_ok=True)
+            root = os.path.join(root, 'scale_x_{}_scale_y_{}_threshold_{:.3f}'.format(perlin_scale_x, perlin_scale_y,
+                                                                                      threshold))
+            os.makedirs(root, exist_ok=True)
+
+            cv2.imwrite(os.path.join(root, 'msk_{}.png'.format(self.cnt)),
+                                     perlin_thr.transpose((2, 0, 1)).squeeze(0) * 255)
+            cv2.imwrite(os.path.join(root, 'noise_{}.png'.format(self.cnt)),
+                                     perlin_thr.astype(np.float32) * augmented_image * 255)
 
         no_anomaly = torch.rand(1).numpy()[0]
         if no_anomaly > 0.5:
