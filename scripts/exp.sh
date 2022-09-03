@@ -1,15 +1,13 @@
 # pretrain + fine tune
 # carpet -> grid (id 2 -> 13)
 
-# Image Auc 95.9 AP 98.8
-# Pixel Auc 95.2 AP 56.5
 python train_DRAEM.py --data_path datasets/mvtec --obj_id 2 --sample_rate 1.0 --anomaly_source_path datasets/dtd/images \
   --gpu_id 0 --lr 0.0001 --bs 6 --epochs 100 --log_path logs/carpet_sp_100
 
-# Ratio 100% Image Auc 100 Pixel AP 66.3
-# Ratio 50% Image Auc 99.3 Pixel AP 61.7
-# Ratio 30% Image Auc 99.8 Pixel AP 64.0
-# Ratio 10% Image Auc 99.6 Pixel AP 53.0
+# Ratio 100% AP 74.3
+# Ratio 50% AP 73.3
+# Ratio 30% AP 71.5
+# Ratio 10% AP 62.6
 python train_DRAEM.py --data_path datasets/mvtec --obj_id 13 --sample_rate 1.0 --anomaly_source_path datasets/dtd/images \
   --gpu_id 0 --lr 0.0001 --bs 6 --epochs 100 --log_path logs/grid_sp_100
 python train_DRAEM.py --data_path datasets/mvtec --obj_id 13 --sample_rate 0.5 --anomaly_source_path datasets/dtd/images \
@@ -21,34 +19,30 @@ python train_DRAEM.py --data_path datasets/mvtec --obj_id 13 --sample_rate 0.1 -
 
 # TODO zero-shot eval
 # fine-tuning
-# with both generator and discriminator
-# Ratio 100% Pixel AP 59.4
-# Ratio 10% Pixel AP 49.6
-python train_DRAEM.py --data_path datasets/mvtec --obj_id 13 --sample_rate 0.1 --anomaly_source_path datasets/dtd/images \
-  --pretrained-generative logs/carpet_sp_100/checkpoints/latest_generative.pth \
-  --pretrained-discriminative logs/carpet_sp_100/checkpoints/latest_discriminative.pth \
-  --gpu_id 0 --lr 0.0001 --bs 6 --epochs 1000 --log_path logs/grid_sp_10_finetune_ori_lr
 
+# both generator and discriminator
+# 63.1
 python train_DRAEM.py --data_path datasets/mvtec --obj_id 13 --sample_rate 0.1 --anomaly_source_path datasets/dtd/images \
   --pretrained-generative logs/carpet_sp_100/checkpoints/latest_generative.pth \
   --pretrained-discriminative logs/carpet_sp_100/checkpoints/latest_discriminative.pth \
-  --gpu_id 1 --lr 0.00003 --bs 6 --epochs 1000 --log_path logs/grid_sp_10_finetune_0_3_lr
+  --gpu_id 0 --lr 0.0001 --bs 6 --epochs 1000 --log_path finetune/both
 
 # discriminator only
-# 70.0
+# 68.5
 python train_DRAEM.py --data_path datasets/mvtec --obj_id 13 --sample_rate 0.1 --anomaly_source_path datasets/dtd/images \
   --pretrained-discriminative logs/carpet_sp_100/checkpoints/latest_discriminative.pth \
-  --gpu_id 0 --lr 0.0001 --bs 6 --epochs 1000 --log_path logs/grid_sp_10_finetune_ori_lr
+  --gpu_id 1 --lr 0.0001 --bs 6 --epochs 1000 --log_path finetune/disc
 
-# 55.4
+# generator only
+# 66.9
 python train_DRAEM.py --data_path datasets/mvtec --obj_id 13 --sample_rate 0.1 --anomaly_source_path datasets/dtd/images \
-  --pretrained-discriminative logs/carpet_sp_100/checkpoints/latest_discriminative.pth \
-  --gpu_id 1 --lr 0.00003 --bs 6 --epochs 1000 --log_path logs/grid_sp_10_finetune_0_3_lr
+  --pretrained-generative logs/carpet_sp_100/checkpoints/latest_generative.pth \
+  --gpu_id 2 --lr 0.0001 --bs 6 --epochs 1000 --log_path finetune/gene
 
 # baseline
-# 65.6
+# 62.4
 python train_DRAEM.py --data_path datasets/mvtec --obj_id 13 --sample_rate 0.1 --anomaly_source_path datasets/dtd/images \
-  --gpu_id 0 --lr 0.0001 --bs 6 --epochs 1000 --log_path logs/grid_sp_10
+  --gpu_id 3 --lr 0.0001 --bs 6 --epochs 1000 --log_path finetune/baseline
 
 # joint training
 
@@ -63,6 +57,10 @@ python train_DRAEM.py --data_path datasets/mvtec --obj_id 13 --sample_rate 1 --a
 # carpet + grid 57.3 71.8
 python joint_train.py --data_path datasets/mvtec --anomaly_source_path datasets/dtd/images \
   --gpu_id 2 --lr 0.0001 --bs 6 --epochs 100 --log_path joint_train/carpet_grid
+
+# carpet + grid shared discriminator 63.2 56.5
+python joint_train.py --data_path datasets/mvtec --anomaly_source_path datasets/dtd/images \
+  --gpu_id 0 --lr 0.0001 --bs 6 --epochs 200 --log_path joint_train/shared_disc
 
 # TODO why not using standard augmentations
   # T.Normalize()
